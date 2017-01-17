@@ -1,4 +1,6 @@
 // Packages
+import {readFileSync} from 'fs'
+import {join, dirname} from 'path'
 import jsx from 'babel-plugin-syntax-jsx'
 import hash from 'string-hash'
 import {SourceMapGenerator} from 'source-map'
@@ -52,6 +54,20 @@ export default function ({types: t}) {
       []
     )
   )
+
+  const getStyleSrc = style => {
+    const srcAttribute = style.openingElement.attributes.find(a => a.name.name === 'src')
+    if (!srcAttribute) {
+      return null
+    }
+    return srcAttribute.value.value
+  }
+
+  const readySrcStyle = (path, src) => {
+    const baseDir = dirname(path.hub.file.opts.filename)
+    const content = readFileSync(join(baseDir, src), 'utf8')
+    return content
+  }
 
   return {
     inherits: jsx,
@@ -118,38 +134,51 @@ export default function ({types: t}) {
               (t.isJSXText(c) && c.value.trim() !== '')
             ))
 
-            if (children.length !== 1) {
-              throw path.buildCodeFrameError(`Expected one child under ` +
-                `JSX Style tag, but got ${style.children.length} ` +
-                `(eg: <style jsx>{\`hi\`}</style>)`)
+            const styleSrc = getStyleSrc(style)
+
+            if (styleSrc) {
+              const styleText = readySrcStyle(path, styleSrc)
+              const styleId = hash(styleText)
+
+              state.styles.push([
+                styleId,
+                styleText,
+                0
+              ])
+            } else {
+              if (children.length !== 1) {
+                throw path.buildCodeFrameError(`Expected one child under ` +
+                  `JSX Style tag, but got ${style.children.length} ` +
+                  `(eg: <style jsx>{\`hi\`}</style>)`)
+              }
+
+              const child = children[0]
+
+              if (!t.isJSXExpressionContainer(child)) {
+                throw path.buildCodeFrameError(`Expected a child of ` +
+                  `type JSXExpressionContainer under JSX Style tag ` +
+                  `(eg: <style jsx>{\`hi\`}</style>), got ${child.type}`)
+              }
+
+              const expression = child.expression
+
+              if (!t.isTemplateLiteral(child.expression) &&
+                  !t.isStringLiteral(child.expression)) {
+                throw path.buildCodeFrameError(`Expected a template ` +
+                  `literal or String literal as the child of the ` +
+                  `JSX Style tag (eg: <style jsx>{\`some css\`}</style>),` +
+                  ` but got ${expression.type}`)
+              }
+
+              const styleText = getExpressionText(expression)
+              const styleId = hash(styleText)
+
+              state.styles.push([
+                styleId,
+                styleText,
+                expression.loc
+              ])
             }
-
-            const child = children[0]
-
-            if (!t.isJSXExpressionContainer(child)) {
-              throw path.buildCodeFrameError(`Expected a child of ` +
-                `type JSXExpressionContainer under JSX Style tag ` +
-                `(eg: <style jsx>{\`hi\`}</style>), got ${child.type}`)
-            }
-
-            const expression = child.expression
-
-            if (!t.isTemplateLiteral(child.expression) &&
-                !t.isStringLiteral(child.expression)) {
-              throw path.buildCodeFrameError(`Expected a template ` +
-                `literal or String literal as the child of the ` +
-                `JSX Style tag (eg: <style jsx>{\`some css\`}</style>),` +
-                ` but got ${expression.type}`)
-            }
-
-            const styleText = getExpressionText(expression)
-            const styleId = hash(styleText)
-
-            state.styles.push([
-              styleId,
-              styleText,
-              expression.loc
-            ])
           }
 
           state.jsxId = hash(state.styles.map(s => s[1]).join(''))

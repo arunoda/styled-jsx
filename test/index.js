@@ -46,6 +46,12 @@ test('works with class', async t => {
   t.is(code, out.trim())
 })
 
+test('works with src tag', async t => {
+  const {code} = await transform('./fixtures/src.js')
+  const out = await read('./fixtures/src.out.js')
+  t.is(code, out.trim())
+})
+
 test('ignores when attribute is absent', async t => {
   const {code} = await transform('./fixtures/absent.js')
   const out = await read('./fixtures/absent.out.js')
